@@ -1,0 +1,40 @@
+{
+  "common": {
+    "name": "lufthansa-flightstatus",
+    "version": "0.1.0",
+    "news": {},
+    "titleLang": {
+      "en": "Lufthansa Flight Status",
+      "de": "Lufthansa Flugstatus"
+    },
+    "desc": {
+      "en": "Retrieves a flight status using Lufthansa Open API.",
+      "de": "Ruft einen Flugstatus über die Lufthansa Open API ab."
+    },
+    "authors": ["Stefan"],
+    "platform": "Javascript/Node.js",
+    "mode": "daemon",
+    "compact": true,
+    "enabled": true,
+    "icon": "lufthansa-flightstatus.png",
+    "extIcon": "https://raw.githubusercontent.com/ioBroker/ioBroker.admin/master/admin/admin.png",
+    "readme": "https://developer.lufthansa.com/docs/read/api_details/operations/Flight_Status",
+    "loglevel": "info",
+    "tier": 3,
+    "type": "travel",
+    "connectionType": "cloud",
+    "dataSource": "poll",
+    "dependencies": [{"js-controller": ">=5.0.0"}]
+  },
+  "native": {
+    "clientId": "",
+    "clientSecret": "",
+    "flightNumberState": "openairlog.0.today.currentFlightNumber",
+    "flightDateState": "",
+    "pollIntervalSec": 300,
+    "apiBase": "https://api.lufthansa.com/v1"
+  },
+  "objects": [],
+  "protectedNative": [],
+  "encryptedNative": ["clientSecret"]
+}

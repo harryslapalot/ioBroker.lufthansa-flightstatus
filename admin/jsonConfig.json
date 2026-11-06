@@ -1,0 +1,30 @@
+{
+  "i18n": true,
+  "type": "panel",
+  "items": {
+    "clientId": {
+      "type": "text",
+      "label": "Lufthansa Client ID (Application Key)"
+    },
+    "clientSecret": {
+      "type": "password",
+      "label": "Lufthansa Client Secret"
+    },
+    "flightNumberState": {
+      "type": "text",
+      "label": "ioBroker-Objekt mit Flugnummer",
+      "default": "openairlog.0.today.currentFlightNumber"
+    },
+    "flightDateState": {
+      "type": "text",
+      "label": "Optional: ioBroker-Objekt mit Abflugdatum (YYYY-MM-DD)"
+    },
+    "pollIntervalSec": {
+      "type": "number",
+      "label": "Abfrageintervall (Sekunden)",
+      "min": 60,
+      "max": 3600,
+      "default": 300
+    }
+  }
+}
