@@ -206,7 +206,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         if (!this.monitoring) return;
         const dueAt = Math.max(Date.now(), this.lastStatusRequestAt + this.pollingIntervalMs());
         this.setStateAsync('info.nextRefresh', new Date(dueAt).toISOString(), true).catch(() => undefined);
-        this.queueRefresh(dueAt - Date.now());
+        this.queueRefresh(Math.max(0, dueAt - Date.now()));
     }
 
     async refresh() {
