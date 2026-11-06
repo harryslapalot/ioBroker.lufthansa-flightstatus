@@ -16,6 +16,9 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.trackedDepartureDate = '';
         this.trackedCityPair = '';
         this.terminalTimer = null;
+        this.summaryTimer = null;
+        this.summaryData = null;
+        this.inFlightWithEta = false;
         this.sourceWatchTimer = null;
         this.lastObservedFlightNumber = null;
         this.lastObservedFlightDate = null;
@@ -35,11 +38,13 @@ class LufthansaFlightStatus extends utils.Adapter {
         await this.setStateAsync('info.connection', false, true);
         await this.watchSourceStates(true);
         this.sourceWatchTimer = this.setInterval(() => this.watchSourceStates().catch((error) => this.log.warn(error.message)), 10_000);
+        this.summaryTimer = this.setInterval(() => this.updateSummaryFromCache().catch((error) => this.log.warn(error.message)), 60_000);
     }
 
     onUnload(callback) {
         if (this.timer) this.clearTimeout(this.timer);
         if (this.terminalTimer) this.clearTimeout(this.terminalTimer);
+        if (this.summaryTimer) this.clearInterval(this.summaryTimer);
         if (this.sourceWatchTimer) this.clearInterval(this.sourceWatchTimer);
         callback();
     }
@@ -51,6 +56,7 @@ class LufthansaFlightStatus extends utils.Adapter {
             'info.lastRefresh': ['string', 'value.time', 'Letzte erfolgreiche Aktualisierung'],
             'info.monitoring': ['boolean', 'indicator', 'Flugüberwachung aktiv'],
             'info.nextRefresh': ['string', 'value.time', 'Nächste geplante Abfrage'],
+            'info.activePollIntervalSec': ['number', 'value.interval', 'Aktuelles Lufthansa-Abfrageintervall', 's'],
             'info.retentionUntil': ['string', 'value.time', 'Anzeige des beendeten Flugs bis'],
             'flight.number': ['string', 'text', 'Abgerufene Flugnummer'],
             'flight.summary': ['string', 'text', 'Kurzstatus für Anzeige'],
@@ -93,8 +99,13 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.timer = this.setTimeout(() => this.refresh(), delayMs);
     }
 
-    pollingIntervalMs() {
+    defaultPollingIntervalMs() {
         return Math.min(Math.max(Number(this.config.pollIntervalSec) || 300, 60), 3600) * 1000;
+    }
+
+    pollingIntervalMs() {
+        if (!this.inFlightWithEta) return this.defaultPollingIntervalMs();
+        return Math.min(Math.max(Number(this.config.inFlightPollIntervalSec) || 600, 600), 900) * 1000;
     }
 
     flightNumberStateId() {
@@ -147,6 +158,8 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.trackedFlightNumber = flightNumber;
         this.trackedDepartureDate = await this.readDepartureDate();
         this.trackedCityPair = '';
+        this.summaryData = null;
+        this.inFlightWithEta = false;
         this.monitoring = true;
         await this.setStateAsync('info.monitoring', true, true);
         await this.setStateAsync('info.status', `Überwachung für ${flightNumber} gestartet`, true);
@@ -198,6 +211,8 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.trackedFlightNumber = '';
         this.trackedDepartureDate = '';
         this.trackedCityPair = '';
+        this.summaryData = null;
+        this.inFlightWithEta = false;
         await this.setStateAsync('flight.number', '', true);
         await this.setStateAsync('flight.departureDate', '', true);
         await this.setStateAsync('flight.summary', '', true);
@@ -207,7 +222,9 @@ class LufthansaFlightStatus extends utils.Adapter {
 
     requestRefresh() {
         if (!this.monitoring) return;
-        const dueAt = Math.max(Date.now(), this.lastStatusRequestAt + this.pollingIntervalMs());
+        const intervalMs = this.pollingIntervalMs();
+        const dueAt = Math.max(Date.now(), this.lastStatusRequestAt + intervalMs);
+        this.setStateAsync('info.activePollIntervalSec', intervalMs / 1000, true).catch(() => undefined);
         this.setStateAsync('info.nextRefresh', new Date(dueAt).toISOString(), true).catch(() => undefined);
         this.queueRefresh(Math.max(0, dueAt - Date.now()));
     }
@@ -336,6 +353,8 @@ class LufthansaFlightStatus extends utils.Adapter {
         const etaDate = this.parseUtc(etaUtc);
         const statusCode = flight.FlightStatus?.Code || 'NA';
         this.trackedCityPair = this.cityPair(departure.AirportCode, arrival.AirportCode);
+        if (actualDeparture && estimatedArrival && !['LD', 'CD'].includes(statusCode)) this.inFlightWithEta = true;
+        this.summaryData = { flightNumber, statusCode, etaDate };
 
         const values = {
             'flight.number': flightNumber,
@@ -399,6 +418,11 @@ class LufthansaFlightStatus extends utils.Adapter {
             ? `${minutes} Minuten`
             : `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.`;
         return `${prefix} ETA ${eta}, ${remaining} Restflugzeit`;
+    }
+
+    async updateSummaryFromCache() {
+        if (!this.summaryData || ['LD', 'CD'].includes(this.summaryData.statusCode)) return;
+        await this.setStateAsync('flight.summary', this.summary(this.summaryData.flightNumber, this.summaryData.statusCode, this.summaryData.etaDate), true);
     }
 }
 
