@@ -13,6 +13,7 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 
 - Sind Flugnummer oder optionales Abflugdatum leer, bleibt der Adapter ohne API-Aufruf im Wartezustand.
 - Sobald sich der konfigurierte Flugnummer-State auf eine gültige Flugnummer ändert, startet die Überwachung sofort.
+- Zusätzlich prüft der Adapter die beiden konfigurierten ioBroker-States alle 10 Sekunden lokal. Das fängt verpasste State-Events ab und verbraucht keine Lufthansa-API-Aufrufe.
 - Wird dieser State während einer laufenden Überwachung leer, verfolgt der Adapter den bereits gemerkten Flug weiter. Erst eine neue Flugnummer oder der Status `LD`/`CD` ersetzt beziehungsweise beendet die Überwachung.
 - Zwischen zwei Flight-Status-Anfragen liegt immer mindestens das konfigurierte Abfrageintervall (mindestens 60 Sekunden).
 - Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die API-Abfrage automatisch. Die letzten Flugdaten einschließlich `flight.number` und Kurzstatus bleiben danach noch 30 Minuten sichtbar und werden erst anschließend geleert.
