@@ -1,6 +1,6 @@
 {
   "name": "iobroker.lufthansa-flightstatus",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lufthansa Open API flight-status adapter for ioBroker",
   "main": "main.js",
   "scripts": {
