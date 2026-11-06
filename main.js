@@ -11,19 +11,21 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.running = false;
         this.monitoring = false;
         this.lastStatusRequestAt = 0;
+        this.trackedFlightNumber = '';
+        this.trackedDepartureDate = '';
 
         this.on('ready', () => this.onReady());
-        this.on('stateChange', (id) => {
-            if (id === this.config.flightNumberState) this.onFlightNumberChanged().catch((error) => this.log.warn(error.message));
-            if (id === this.config.flightDateState && this.monitoring) this.requestRefresh();
+        this.on('stateChange', (id, state) => {
+            if (id === this.flightNumberStateId()) this.onFlightNumberChanged(state).catch((error) => this.log.warn(error.message));
+            if (id === this.flightDateStateId()) this.onFlightDateChanged(state).catch((error) => this.log.warn(error.message));
         });
         this.on('unload', (callback) => this.onUnload(callback));
     }
 
     async onReady() {
         await this.createStates();
-        await this.subscribeForeignStatesAsync(this.config.flightNumberState);
-        if (this.config.flightDateState) await this.subscribeForeignStatesAsync(this.config.flightDateState);
+        await this.subscribeForeignStatesAsync(this.flightNumberStateId());
+        if (this.flightDateStateId()) await this.subscribeForeignStatesAsync(this.flightDateStateId());
         await this.setStateAsync('info.connection', false, true);
         await this.onFlightNumberChanged();
     }
@@ -80,25 +82,58 @@ class LufthansaFlightStatus extends utils.Adapter {
         return Math.min(Math.max(Number(this.config.pollIntervalSec) || 300, 60), 3600) * 1000;
     }
 
-    async onFlightNumberChanged() {
-        const flightNumber = await this.readFlightNumber();
+    flightNumberStateId() {
+        return String(this.config.flightNumberState || '').trim();
+    }
+
+    flightDateStateId() {
+        return String(this.config.flightDateState || '').trim();
+    }
+
+    normalizeFlightNumber(value) {
+        const flightNumber = String(value || '').toUpperCase().replace(/\s+/g, '');
+        if (flightNumber && !/^[A-Z0-9]{3,8}$/.test(flightNumber)) throw new Error(`Ungültige Flugnummer: ${flightNumber}`);
+        return flightNumber;
+    }
+
+    async onFlightNumberChanged(state) {
+        const flightNumber = state === undefined ? await this.readFlightNumber() : this.normalizeFlightNumber(state?.val);
         if (!flightNumber) {
-            this.stopMonitoring('Warte auf Flugnummer im konfigurierten Objekt');
+            if (this.monitoring && this.trackedFlightNumber) {
+                await this.setStateAsync('info.status', `Überwachung für ${this.trackedFlightNumber} läuft weiter, obwohl der Flugnummer-State leer ist`, true);
+                return;
+            }
+            await this.stopMonitoring('Warte auf Flugnummer im konfigurierten Objekt');
             return;
         }
+
+        if (this.monitoring && flightNumber === this.trackedFlightNumber) return;
+        this.trackedFlightNumber = flightNumber;
+        this.trackedDepartureDate = await this.readDepartureDate();
         this.monitoring = true;
         await this.setStateAsync('info.monitoring', true, true);
         await this.setStateAsync('info.status', `Überwachung für ${flightNumber} gestartet`, true);
         this.requestRefresh();
     }
 
-    stopMonitoring(status) {
+    async onFlightDateChanged(state) {
+        if (!this.monitoring) return;
+        const date = String(state?.val || '').trim();
+        if (!date) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`Ungültiges Abflugdatum: ${date}`);
+        if (date === this.trackedDepartureDate) return;
+        this.trackedDepartureDate = date;
+        await this.setStateAsync('info.status', `Abflugdatum für ${this.trackedFlightNumber} aktualisiert`, true);
+        this.requestRefresh();
+    }
+
+    async stopMonitoring(status) {
         this.monitoring = false;
         if (this.timer) this.clearTimeout(this.timer);
         this.timer = null;
-        this.setStateAsync('info.monitoring', false, true).catch(() => undefined);
-        this.setStateAsync('info.nextRefresh', '', true).catch(() => undefined);
-        this.setStateAsync('info.status', status, true).catch(() => undefined);
+        await this.setStateAsync('info.monitoring', false, true);
+        await this.setStateAsync('info.nextRefresh', '', true);
+        await this.setStateAsync('info.status', status, true);
     }
 
     requestRefresh() {
@@ -112,10 +147,10 @@ class LufthansaFlightStatus extends utils.Adapter {
         if (this.running || !this.monitoring) return;
         this.running = true;
         try {
-            const flightNumber = await this.readFlightNumber();
-            const departureDate = await this.readDepartureDate();
+            const flightNumber = this.trackedFlightNumber;
+            const departureDate = this.trackedDepartureDate || await this.readDepartureDate();
             if (!flightNumber) {
-                this.stopMonitoring('Warte auf Flugnummer im konfigurierten Objekt');
+                await this.stopMonitoring('Warte auf Flugnummer im konfigurierten Objekt');
                 return;
             }
 
@@ -130,7 +165,7 @@ class LufthansaFlightStatus extends utils.Adapter {
             await this.setStateAsync('info.status', `ok (${statusCode})`, true);
             await this.setStateAsync('info.lastRefresh', new Date().toISOString(), true);
             if (['LD', 'CD'].includes(statusCode)) {
-                this.stopMonitoring(statusCode === 'LD' ? 'Flug gelandet – Überwachung beendet' : 'Flug annulliert – Überwachung beendet');
+                await this.stopMonitoring(statusCode === 'LD' ? 'Flug gelandet – Überwachung beendet' : 'Flug annulliert – Überwachung beendet');
             }
         } catch (error) {
             const message = error?.message || String(error);
@@ -144,16 +179,14 @@ class LufthansaFlightStatus extends utils.Adapter {
     }
 
     async readFlightNumber() {
-        const id = String(this.config.flightNumberState || '').trim();
+        const id = this.flightNumberStateId();
         if (!id) throw new Error('Kein Objekt für die Flugnummer konfiguriert');
         const state = await this.getForeignStateAsync(id);
-        const value = String(state?.val || '').toUpperCase().replace(/\s+/g, '');
-        if (value && !/^[A-Z0-9]{3,8}$/.test(value)) throw new Error(`Ungültige Flugnummer im Objekt ${id}: ${value}`);
-        return value;
+        return this.normalizeFlightNumber(state?.val);
     }
 
     async readDepartureDate() {
-        const id = String(this.config.flightDateState || '').trim();
+        const id = this.flightDateStateId();
         if (id) {
             const state = await this.getForeignStateAsync(id);
             const date = String(state?.val || '').trim();
