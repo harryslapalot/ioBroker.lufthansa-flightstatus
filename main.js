@@ -9,10 +9,13 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.accessTokenExpiresAt = 0;
         this.timer = null;
         this.running = false;
+        this.monitoring = false;
+        this.lastStatusRequestAt = 0;
 
         this.on('ready', () => this.onReady());
         this.on('stateChange', (id) => {
-            if (id === this.config.flightNumberState || id === this.config.flightDateState) this.queueRefresh(0);
+            if (id === this.config.flightNumberState) this.onFlightNumberChanged().catch((error) => this.log.warn(error.message));
+            if (id === this.config.flightDateState && this.monitoring) this.requestRefresh();
         });
         this.on('unload', (callback) => this.onUnload(callback));
     }
@@ -22,7 +25,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         await this.subscribeForeignStatesAsync(this.config.flightNumberState);
         if (this.config.flightDateState) await this.subscribeForeignStatesAsync(this.config.flightDateState);
         await this.setStateAsync('info.connection', false, true);
-        this.queueRefresh(0);
+        await this.onFlightNumberChanged();
     }
 
     onUnload(callback) {
@@ -35,6 +38,8 @@ class LufthansaFlightStatus extends utils.Adapter {
             'info.connection': ['boolean', 'info.connection', 'Verbindung zur Lufthansa Open API'],
             'info.status': ['string', 'info.status', 'Abrufstatus'],
             'info.lastRefresh': ['string', 'value.time', 'Letzte erfolgreiche Aktualisierung'],
+            'info.monitoring': ['boolean', 'indicator', 'Flugüberwachung aktiv'],
+            'info.nextRefresh': ['string', 'value.time', 'Nächste geplante Abfrage'],
             'flight.number': ['string', 'text', 'Abgerufene Flugnummer'],
             'flight.departureDate': ['string', 'text', 'Abflugdatum der Abfrage'],
             'flight.status.code': ['string', 'text', 'Flugstatus-Code'],
@@ -71,26 +76,62 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.timer = this.setTimeout(() => this.refresh(), delayMs);
     }
 
+    pollingIntervalMs() {
+        return Math.min(Math.max(Number(this.config.pollIntervalSec) || 300, 60), 3600) * 1000;
+    }
+
+    async onFlightNumberChanged() {
+        const flightNumber = await this.readFlightNumber();
+        if (!flightNumber) {
+            this.stopMonitoring('Warte auf Flugnummer im konfigurierten Objekt');
+            return;
+        }
+        this.monitoring = true;
+        await this.setStateAsync('info.monitoring', true, true);
+        await this.setStateAsync('info.status', `Überwachung für ${flightNumber} gestartet`, true);
+        this.requestRefresh();
+    }
+
+    stopMonitoring(status) {
+        this.monitoring = false;
+        if (this.timer) this.clearTimeout(this.timer);
+        this.timer = null;
+        this.setStateAsync('info.monitoring', false, true).catch(() => undefined);
+        this.setStateAsync('info.nextRefresh', '', true).catch(() => undefined);
+        this.setStateAsync('info.status', status, true).catch(() => undefined);
+    }
+
+    requestRefresh() {
+        if (!this.monitoring) return;
+        const dueAt = Math.max(Date.now(), this.lastStatusRequestAt + this.pollingIntervalMs());
+        this.setStateAsync('info.nextRefresh', new Date(dueAt).toISOString(), true).catch(() => undefined);
+        this.queueRefresh(dueAt - Date.now());
+    }
+
     async refresh() {
-        if (this.running) return;
+        if (this.running || !this.monitoring) return;
         this.running = true;
         try {
             const flightNumber = await this.readFlightNumber();
             const departureDate = await this.readDepartureDate();
             if (!flightNumber) {
-                await this.setStateAsync('info.connection', true, true);
-                await this.setStateAsync('info.status', 'Warte auf Flugnummer im konfigurierten Objekt', true);
+                this.stopMonitoring('Warte auf Flugnummer im konfigurierten Objekt');
                 return;
             }
 
+            this.lastStatusRequestAt = Date.now();
             const response = await this.getFlightStatus(flightNumber, departureDate);
             const flight = this.firstFlight(response);
             if (!flight) throw new Error(`Kein Flugstatus für ${flightNumber} am ${departureDate} gefunden`);
 
             await this.publishFlight(flightNumber, departureDate, flight, response);
             await this.setStateAsync('info.connection', true, true);
-            await this.setStateAsync('info.status', 'ok', true);
+            const statusCode = flight.FlightStatus?.Code || 'NA';
+            await this.setStateAsync('info.status', `ok (${statusCode})`, true);
             await this.setStateAsync('info.lastRefresh', new Date().toISOString(), true);
+            if (['LD', 'CD'].includes(statusCode)) {
+                this.stopMonitoring(statusCode === 'LD' ? 'Flug gelandet – Überwachung beendet' : 'Flug annulliert – Überwachung beendet');
+            }
         } catch (error) {
             const message = error?.message || String(error);
             await this.setStateAsync('info.connection', false, true);
@@ -98,8 +139,7 @@ class LufthansaFlightStatus extends utils.Adapter {
             this.log.warn(`Lufthansa Flight Status: ${message}`);
         } finally {
             this.running = false;
-            const seconds = Math.min(Math.max(Number(this.config.pollIntervalSec) || 300, 60), 3600);
-            this.queueRefresh(seconds * 1000);
+            this.requestRefresh();
         }
     }
 
@@ -117,8 +157,10 @@ class LufthansaFlightStatus extends utils.Adapter {
         if (id) {
             const state = await this.getForeignStateAsync(id);
             const date = String(state?.val || '').trim();
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`Ungültiges Abflugdatum im Objekt ${id}: ${date}`);
-            return date;
+            if (date) {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`Ungültiges Abflugdatum im Objekt ${id}: ${date}`);
+                return date;
+            }
         }
         return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date());
     }
