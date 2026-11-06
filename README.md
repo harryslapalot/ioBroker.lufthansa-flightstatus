@@ -12,7 +12,8 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 ## Überwachungslogik und API-Quote
 
 - Sind Flugnummer oder optionales Abflugdatum leer, bleibt der Adapter ohne API-Aufruf im Wartezustand.
-- Sobald sich der konfigurierte Flugnummer-State auf eine gültige Flugnummer ändert, startet die Überwachung.
+- Sobald sich der konfigurierte Flugnummer-State auf eine gültige Flugnummer ändert, startet die Überwachung sofort.
+- Wird dieser State während einer laufenden Überwachung leer, verfolgt der Adapter den bereits gemerkten Flug weiter. Erst eine neue Flugnummer oder der Status `LD`/`CD` ersetzt beziehungsweise beendet die Überwachung.
 - Zwischen zwei Flight-Status-Anfragen liegt immer mindestens das konfigurierte Abfrageintervall (mindestens 60 Sekunden).
 - Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die Überwachung automatisch.
 - `info.monitoring` zeigt die aktive Überwachung; `info.nextRefresh` zeigt den nächsten geplanten Abruf.
