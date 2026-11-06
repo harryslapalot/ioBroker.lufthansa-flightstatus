@@ -354,7 +354,10 @@ class LufthansaFlightStatus extends utils.Adapter {
         if (!etaDate) return `${flightNumber} ETA --:--, Restflugzeit unbekannt`;
         const eta = new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hour12: false }).format(etaDate);
         const minutes = Math.max(0, Math.ceil((etaDate.getTime() - Date.now()) / 60_000));
-        return `${flightNumber} ETA ${eta}, ${minutes} Minuten Restflugzeit`;
+        const remaining = minutes < 60
+            ? `${minutes} Minuten`
+            : `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.`;
+        return `${flightNumber} ETA ${eta}, ${remaining} Restflugzeit`;
     }
 }
 
