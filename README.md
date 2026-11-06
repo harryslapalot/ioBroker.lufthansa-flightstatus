@@ -28,7 +28,7 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - `flight.arrival.etaBerlin`: aktuell beste Ankunftszeit in der Zeitzone Berlin.
 - `flight.progress`: Fortschritt von tatsächlichem Abflug (falls vorhanden), sonst geschätztem/geplantem Abflug, bis zur ETA.
 - `flight.raw`: vollständige JSON-Antwort für spätere Erweiterungen.
-- `flight.summary`: zum Beispiel `LH780 ETA 10:14, 2 Std. 0 Min. Restflugzeit`, `LH780 ETA 10:14, 45 Minuten Restflugzeit`, `LH780 gelandet` oder `LH780 cancelled`.
+- `flight.summary`: zum Beispiel `LH780 FRA-SIN ETA 10:14, 2 Std. 0 Min. Restflugzeit`, `LH780 FRA-SIN gelandet` oder `LH780 FRA-SIN cancelled`.
 - `info.monitoring` / `info.nextRefresh`: Status und Zeitpunkt der aktiven Überwachung.
 
 ## Installation aus GitHub
