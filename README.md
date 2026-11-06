@@ -15,8 +15,9 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - Sobald sich der konfigurierte Flugnummer-State auf eine gültige Flugnummer ändert, startet die Überwachung sofort.
 - Wird dieser State während einer laufenden Überwachung leer, verfolgt der Adapter den bereits gemerkten Flug weiter. Erst eine neue Flugnummer oder der Status `LD`/`CD` ersetzt beziehungsweise beendet die Überwachung.
 - Zwischen zwei Flight-Status-Anfragen liegt immer mindestens das konfigurierte Abfrageintervall (mindestens 60 Sekunden).
-- Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die Überwachung automatisch.
+- Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die API-Abfrage automatisch. Die letzten Flugdaten einschließlich `flight.number` und Kurzstatus bleiben danach noch 30 Minuten sichtbar und werden erst anschließend geleert.
 - `info.monitoring` zeigt die aktive Überwachung; `info.nextRefresh` zeigt den nächsten geplanten Abruf.
+- `info.retentionUntil` zeigt, bis wann die Daten eines beendeten Flugs sichtbar bleiben.
 
 ## Verfügbare Datenpunkte
 
@@ -25,6 +26,7 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - `flight.arrival.etaBerlin`: aktuell beste Ankunftszeit in der Zeitzone Berlin.
 - `flight.progress`: Fortschritt von tatsächlichem Abflug (falls vorhanden), sonst geschätztem/geplantem Abflug, bis zur ETA.
 - `flight.raw`: vollständige JSON-Antwort für spätere Erweiterungen.
+- `flight.summary`: zum Beispiel `LH780 ETA 10:14, 120 Minuten Restflugzeit`, `LH780 gelandet` oder `LH780 cancelled`.
 - `info.monitoring` / `info.nextRefresh`: Status und Zeitpunkt der aktiven Überwachung.
 
 ## Installation aus GitHub
