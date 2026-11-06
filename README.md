@@ -9,6 +9,14 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - **Optionales Objekt mit Abflugdatum:** ein State mit `YYYY-MM-DD`, etwa `0_userdata.0.flight.departureDate`. Die Lufthansa API benötigt das Datum am Abflugort. Ohne diesen State nutzt der Adapter das heutige Datum in Berlin.
 - **Abfrageintervall:** Voreinstellung 300 Sekunden. Die Lufthansa API-Quote beachten.
 
+## Überwachungslogik und API-Quote
+
+- Sind Flugnummer oder optionales Abflugdatum leer, bleibt der Adapter ohne API-Aufruf im Wartezustand.
+- Sobald sich der konfigurierte Flugnummer-State auf eine gültige Flugnummer ändert, startet die Überwachung.
+- Zwischen zwei Flight-Status-Anfragen liegt immer mindestens das konfigurierte Abfrageintervall (mindestens 60 Sekunden).
+- Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die Überwachung automatisch.
+- `info.monitoring` zeigt die aktive Überwachung; `info.nextRefresh` zeigt den nächsten geplanten Abruf.
+
 ## Verfügbare Datenpunkte
 
 - `flight.status.*`: Flugstatus (zum Beispiel DP, LD, CD) und Klartext.
@@ -16,6 +24,7 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - `flight.arrival.etaBerlin`: aktuell beste Ankunftszeit in der Zeitzone Berlin.
 - `flight.progress`: Fortschritt von tatsächlichem Abflug (falls vorhanden), sonst geschätztem/geplantem Abflug, bis zur ETA.
 - `flight.raw`: vollständige JSON-Antwort für spätere Erweiterungen.
+- `info.monitoring` / `info.nextRefresh`: Status und Zeitpunkt der aktiven Überwachung.
 
 ## Installation aus GitHub
 
