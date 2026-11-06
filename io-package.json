@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "lufthansa-flightstatus",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "news": {},
     "titleLang": {
       "en": "Lufthansa Flight Status",
@@ -24,6 +24,10 @@
     "type": "travel",
     "connectionType": "cloud",
     "dataSource": "poll",
+    "adminUI": {
+      "config": "json"
+    },
+    "globalDependencies": [{"admin": ">=7.6.0"}],
     "dependencies": [{"js-controller": ">=5.0.0"}]
   },
   "native": {
