@@ -25,6 +25,13 @@
       "min": 60,
       "max": 3600,
       "default": 300
+    },
+    "inFlightPollIntervalSec": {
+      "type": "number",
+      "label": "Intervall in der Luft nach erster ETA (Sekunden)",
+      "min": 600,
+      "max": 900,
+      "default": 600
     }
   }
 }
