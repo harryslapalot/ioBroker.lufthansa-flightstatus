@@ -23,6 +23,7 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 
 - `flight.status.*`: Flugstatus (zum Beispiel DP, LD, CD) und Klartext.
 - `flight.departure.*` / `flight.arrival.*`: geplante, geschätzte und tatsächliche Zeiten in UTC.
+- `flight.departure.timeStatus.*` / `flight.arrival.timeStatus.*`: Zeitstatus-Code und Klartext, etwa `OT` (pünktlich) oder `DL` (verspätet).
 - `flight.arrival.etaBerlin`: aktuell beste Ankunftszeit in der Zeitzone Berlin.
 - `flight.progress`: Fortschritt von tatsächlichem Abflug (falls vorhanden), sonst geschätztem/geplantem Abflug, bis zur ETA.
 - `flight.raw`: vollständige JSON-Antwort für spätere Erweiterungen.
