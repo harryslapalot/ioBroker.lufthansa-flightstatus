@@ -14,6 +14,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.lastStatusRequestAt = 0;
         this.trackedFlightNumber = '';
         this.trackedDepartureDate = '';
+        this.trackedCityPair = '';
         this.terminalTimer = null;
         this.sourceWatchTimer = null;
         this.lastObservedFlightNumber = null;
@@ -145,6 +146,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.clearTerminalRetention();
         this.trackedFlightNumber = flightNumber;
         this.trackedDepartureDate = await this.readDepartureDate();
+        this.trackedCityPair = '';
         this.monitoring = true;
         await this.setStateAsync('info.monitoring', true, true);
         await this.setStateAsync('info.status', `Überwachung für ${flightNumber} gestartet`, true);
@@ -185,7 +187,7 @@ class LufthansaFlightStatus extends utils.Adapter {
 
     async finishFlight(statusCode, flightNumber) {
         await this.stopMonitoring(statusCode === 'LD' ? 'Flug gelandet – Anzeige bleibt noch 30 Minuten bestehen' : 'Flug annulliert – Anzeige bleibt noch 30 Minuten bestehen');
-        await this.setStateAsync('flight.summary', `${flightNumber} ${statusCode === 'LD' ? 'gelandet' : 'cancelled'}`, true);
+        await this.setStateAsync('flight.summary', `${this.summaryPrefix(flightNumber)} ${statusCode === 'LD' ? 'gelandet' : 'cancelled'}`, true);
         const retentionUntil = new Date(Date.now() + TERMINAL_RETENTION_MS);
         await this.setStateAsync('info.retentionUntil', retentionUntil.toISOString(), true);
         this.terminalTimer = this.setTimeout(() => this.clearFinishedFlight(), TERMINAL_RETENTION_MS);
@@ -195,6 +197,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.terminalTimer = null;
         this.trackedFlightNumber = '';
         this.trackedDepartureDate = '';
+        this.trackedCityPair = '';
         await this.setStateAsync('flight.number', '', true);
         await this.setStateAsync('flight.departureDate', '', true);
         await this.setStateAsync('flight.summary', '', true);
@@ -332,6 +335,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         const startUtc = actualDeparture || estimatedDeparture || scheduledDeparture;
         const etaDate = this.parseUtc(etaUtc);
         const statusCode = flight.FlightStatus?.Code || 'NA';
+        this.trackedCityPair = this.cityPair(departure.AirportCode, arrival.AirportCode);
 
         const values = {
             'flight.number': flightNumber,
@@ -376,16 +380,25 @@ class LufthansaFlightStatus extends utils.Adapter {
         return Math.max(0, Math.min(100, Math.round(((Date.now() - start) / (end - start)) * 100)));
     }
 
+    cityPair(origin, destination) {
+        return origin && destination ? `${origin}-${destination}` : '';
+    }
+
+    summaryPrefix(flightNumber) {
+        return [flightNumber, this.trackedCityPair].filter(Boolean).join(' ');
+    }
+
     summary(flightNumber, statusCode, etaDate) {
-        if (statusCode === 'LD') return `${flightNumber} gelandet`;
-        if (statusCode === 'CD') return `${flightNumber} cancelled`;
-        if (!etaDate) return `${flightNumber} ETA --:--, Restflugzeit unbekannt`;
+        const prefix = this.summaryPrefix(flightNumber);
+        if (statusCode === 'LD') return `${prefix} gelandet`;
+        if (statusCode === 'CD') return `${prefix} cancelled`;
+        if (!etaDate) return `${prefix} ETA --:--, Restflugzeit unbekannt`;
         const eta = new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hour12: false }).format(etaDate);
         const minutes = Math.max(0, Math.ceil((etaDate.getTime() - Date.now()) / 60_000));
         const remaining = minutes < 60
             ? `${minutes} Minuten`
             : `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.`;
-        return `${flightNumber} ETA ${eta}, ${remaining} Restflugzeit`;
+        return `${prefix} ETA ${eta}, ${remaining} Restflugzeit`;
     }
 }
 
