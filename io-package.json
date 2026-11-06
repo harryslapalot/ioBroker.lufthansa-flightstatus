@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "lufthansa-flightstatus",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "news": {},
     "titleLang": {
       "en": "Lufthansa Flight Status",
