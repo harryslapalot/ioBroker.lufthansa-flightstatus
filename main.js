@@ -1,7 +1,6 @@
 'use strict';
 
 const utils = require('@iobroker/adapter-core');
-const TERMINAL_RETENTION_MS = 30 * 60 * 1000;
 
 class LufthansaFlightStatus extends utils.Adapter {
     constructor(options = {}) {
@@ -108,6 +107,12 @@ class LufthansaFlightStatus extends utils.Adapter {
         return Math.min(Math.max(Number(this.config.inFlightPollIntervalSec) || 600, 600), 900) * 1000;
     }
 
+    terminalRetentionMs() {
+        const configured = Number(this.config.terminalRetentionMinutes);
+        const minutes = Number.isFinite(configured) ? configured : 30;
+        return Math.min(Math.max(minutes, 0), 1440) * 60_000;
+    }
+
     flightNumberStateId() {
         return String(this.config.flightNumberState || '').trim();
     }
@@ -187,6 +192,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.monitoring = false;
         if (this.timer) this.clearTimeout(this.timer);
         this.timer = null;
+        await this.setStateAsync('info.connection', true, true);
         await this.setStateAsync('info.monitoring', false, true);
         await this.setStateAsync('info.nextRefresh', '', true);
         await this.setStateAsync('info.status', status, true);
@@ -199,11 +205,18 @@ class LufthansaFlightStatus extends utils.Adapter {
     }
 
     async finishFlight(statusCode, flightNumber) {
-        await this.stopMonitoring(statusCode === 'LD' ? 'Flug gelandet – Anzeige bleibt noch 30 Minuten bestehen' : 'Flug annulliert – Anzeige bleibt noch 30 Minuten bestehen');
+        const retentionMs = this.terminalRetentionMs();
+        const retentionMinutes = retentionMs / 60_000;
+        const retentionText = retentionMinutes > 0 ? `Anzeige bleibt noch ${retentionMinutes} Minuten bestehen` : 'Anzeige wird jetzt geleert';
+        await this.stopMonitoring(statusCode === 'LD' ? `Flug gelandet – ${retentionText}` : `Flug annulliert – ${retentionText}`);
         await this.setStateAsync('flight.summary', `${this.summaryPrefix(flightNumber)} ${statusCode === 'LD' ? 'gelandet' : 'cancelled'}`, true);
-        const retentionUntil = new Date(Date.now() + TERMINAL_RETENTION_MS);
+        if (!retentionMs) {
+            await this.clearFinishedFlight();
+            return;
+        }
+        const retentionUntil = new Date(Date.now() + retentionMs);
         await this.setStateAsync('info.retentionUntil', retentionUntil.toISOString(), true);
-        this.terminalTimer = this.setTimeout(() => this.clearFinishedFlight(), TERMINAL_RETENTION_MS);
+        this.terminalTimer = this.setTimeout(() => this.clearFinishedFlight(), retentionMs);
     }
 
     async clearFinishedFlight() {
@@ -213,9 +226,21 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.trackedCityPair = '';
         this.summaryData = null;
         this.inFlightWithEta = false;
-        await this.setStateAsync('flight.number', '', true);
-        await this.setStateAsync('flight.departureDate', '', true);
-        await this.setStateAsync('flight.summary', '', true);
+        const fieldsToClear = [
+            'flight.number', 'flight.summary', 'flight.departureDate',
+            'flight.status.code', 'flight.status.text',
+            'flight.origin.airport', 'flight.origin.terminal', 'flight.origin.gate',
+            'flight.departure.timeStatus.code', 'flight.departure.timeStatus.text',
+            'flight.destination.airport', 'flight.destination.terminal', 'flight.destination.gate',
+            'flight.arrival.timeStatus.code', 'flight.arrival.timeStatus.text',
+            'flight.aircraft',
+            'flight.departure.scheduledUtc', 'flight.departure.estimatedUtc', 'flight.departure.actualUtc',
+            'flight.arrival.scheduledUtc', 'flight.arrival.estimatedUtc', 'flight.arrival.actualUtc',
+            'flight.arrival.etaBerlin', 'flight.raw'
+        ];
+        for (const id of fieldsToClear) await this.setStateAsync(id, '', true);
+        await this.setStateAsync('flight.progress', 0, true);
+        await this.setStateAsync('info.activePollIntervalSec', 0, true);
         await this.setStateAsync('info.retentionUntil', '', true);
         await this.setStateAsync('info.status', 'Warte auf Flugnummer im konfigurierten Objekt', true);
     }
