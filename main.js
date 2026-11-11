@@ -187,6 +187,7 @@ class LufthansaFlightStatus extends utils.Adapter {
             await this.clearNextFlight();
             return;
         }
+        if (!this.monitoring && !this.terminalTimer) await this.setStateAsync('info.phase', 'preflight', true);
         this.requestPreflightRefresh(0);
     }
 
@@ -374,21 +375,20 @@ class LufthansaFlightStatus extends utils.Adapter {
         const departure = this.preflightDepartureDate();
         if (!this.nextFlight.number || !departure) {
             await this.setStateAsync('next.visible', false, true);
-            if (!this.monitoring && !this.terminalTimer) await this.setStateAsync('info.phase', 'idle', true);
+            if (!this.monitoring && !this.terminalTimer && this.nextFlight.number) await this.setStateAsync('info.phase', 'preflight', true);
             return;
         }
         const remainingMinutes = Math.max(0, Math.ceil((departure.getTime() - Date.now()) / 60_000));
-        const visible = !this.monitoring && !this.terminalTimer && departure.getTime() > Date.now() && departure.getTime() - Date.now() <= this.preflightDisplayLeadMs();
+        const departureTimeReached = departure.getTime() <= Date.now();
+        const visible = !this.monitoring && !this.terminalTimer && (departureTimeReached || departure.getTime() - Date.now() <= this.preflightDisplayLeadMs());
         const hours = Math.floor(remainingMinutes / 60);
         const minutes = remainingMinutes % 60;
         const prefix = [this.nextFlight.number, this.nextFlight.cityPair].filter(Boolean).join(' ');
         await this.setStateAsync('next.countdownMinutes', remainingMinutes, true);
-        await this.setStateAsync('next.summary', `${prefix} – ${hours} Std. ${minutes} Min. bis Abflug`, true);
+        await this.setStateAsync('next.summary', departureTimeReached ? `${prefix} – wartet auf Abflug` : `${prefix} – ${hours} Std. ${minutes} Min. bis Abflug`, true);
         await this.setStateAsync('next.visible', visible, true);
-        if (visible) {
+        if (!this.monitoring && !this.terminalTimer && this.nextFlight.number) {
             await this.setStateAsync('info.phase', 'preflight', true);
-        } else if (!this.monitoring && !this.terminalTimer) {
-            await this.setStateAsync('info.phase', 'idle', true);
         }
     }
 
