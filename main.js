@@ -21,11 +21,18 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.sourceWatchTimer = null;
         this.lastObservedFlightNumber = null;
         this.lastObservedFlightDate = null;
+        this.preflightTimer = null;
+        this.lastPreflightRequestAt = 0;
+        this.nextFlight = { number: '', date: '', scheduledOffBlock: '', departureUtc: '', cityPair: '' };
+        this.lastObservedNextKey = null;
 
         this.on('ready', () => this.onReady());
         this.on('stateChange', (id, state) => {
             if (id === this.flightNumberStateId()) this.observeFlightNumber(state?.val).catch((error) => this.log.warn(error.message));
             if (id === this.flightDateStateId()) this.observeFlightDate(state?.val).catch((error) => this.log.warn(error.message));
+            if ([this.nextFlightNumberStateId(), this.nextFlightDateStateId(), this.nextScheduledOffBlockStateId()].includes(id)) {
+                this.watchNextFlight().catch((error) => this.log.warn(error.message));
+            }
         });
         this.on('unload', (callback) => this.onUnload(callback));
     }
@@ -34,8 +41,12 @@ class LufthansaFlightStatus extends utils.Adapter {
         await this.createStates();
         await this.subscribeForeignStatesAsync(this.flightNumberStateId());
         if (this.flightDateStateId()) await this.subscribeForeignStatesAsync(this.flightDateStateId());
+        for (const id of [this.nextFlightNumberStateId(), this.nextFlightDateStateId(), this.nextScheduledOffBlockStateId()].filter(Boolean)) {
+            await this.subscribeForeignStatesAsync(id);
+        }
         await this.setStateAsync('info.connection', false, true);
         await this.watchSourceStates(true);
+        await this.watchNextFlight(true);
         this.sourceWatchTimer = this.setInterval(() => this.watchSourceStates().catch((error) => this.log.warn(error.message)), 10_000);
         this.summaryTimer = this.setInterval(() => this.updateSummaryFromCache().catch((error) => this.log.warn(error.message)), 60_000);
     }
@@ -45,6 +56,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         if (this.terminalTimer) this.clearTimeout(this.terminalTimer);
         if (this.summaryTimer) this.clearInterval(this.summaryTimer);
         if (this.sourceWatchTimer) this.clearInterval(this.sourceWatchTimer);
+        if (this.preflightTimer) this.clearTimeout(this.preflightTimer);
         callback();
     }
 
@@ -57,6 +69,13 @@ class LufthansaFlightStatus extends utils.Adapter {
             'info.nextRefresh': ['string', 'value.time', 'Nächste geplante Abfrage'],
             'info.activePollIntervalSec': ['number', 'value.interval', 'Aktuelles Lufthansa-Abfrageintervall', 's'],
             'info.retentionUntil': ['string', 'value.time', 'Anzeige des beendeten Flugs bis'],
+            'info.phase': ['string', 'text', 'Aktuelle Flugphase (idle, preflight, flight, postflight)'],
+            'next.number': ['string', 'text', 'Nächste Flugnummer'],
+            'next.cityPair': ['string', 'text', 'Citypair des nächsten Flugs'],
+            'next.departure.estimatedUtc': ['string', 'value.time', 'Geschätzter Abflug des nächsten Flugs UTC'],
+            'next.countdownMinutes': ['number', 'value', 'Verbleibende Minuten bis Abflug'],
+            'next.summary': ['string', 'text', 'Kurzstatus des nächsten Flugs für Anzeige'],
+            'next.visible': ['boolean', 'indicator', 'Nächsten Flug auf AWTRIX anzeigen'],
             'flight.number': ['string', 'text', 'Abgerufene Flugnummer'],
             'flight.summary': ['string', 'text', 'Kurzstatus für Anzeige'],
             'flight.departureDate': ['string', 'text', 'Abflugdatum der Abfrage'],
@@ -121,6 +140,18 @@ class LufthansaFlightStatus extends utils.Adapter {
         return String(this.config.flightDateState || '').trim();
     }
 
+    nextFlightNumberStateId() {
+        return String(this.config.nextFlightNumberState || 'openairlog.0.next.flightNumber').trim();
+    }
+
+    nextFlightDateStateId() {
+        return String(this.config.nextFlightDateState || 'openairlog.0.next.date').trim();
+    }
+
+    nextScheduledOffBlockStateId() {
+        return String(this.config.nextScheduledOffBlockState || 'openairlog.0.next.scheduledOffBlock').trim();
+    }
+
     normalizeFlightNumber(value) {
         const flightNumber = String(value || '').toUpperCase().replace(/\s+/g, '');
         if (flightNumber && !/^[A-Z0-9]{3,8}$/.test(flightNumber)) throw new Error(`Ungültige Flugnummer: ${flightNumber}`);
@@ -135,6 +166,28 @@ class LufthansaFlightStatus extends utils.Adapter {
             const dateState = await this.getForeignStateAsync(dateId);
             await this.observeFlightDate(dateState?.val, force);
         }
+    }
+
+    async stateValue(id) {
+        if (!id) return '';
+        return (await this.getForeignStateAsync(id))?.val ?? '';
+    }
+
+    async watchNextFlight(force = false) {
+        const number = this.normalizeFlightNumber(await this.stateValue(this.nextFlightNumberStateId()));
+        const date = String(await this.stateValue(this.nextFlightDateStateId()) || '').trim();
+        const scheduledOffBlock = String(await this.stateValue(this.nextScheduledOffBlockStateId()) || '').trim();
+        const key = `${number}|${date}|${scheduledOffBlock}`;
+        if (!force && key === this.lastObservedNextKey) return;
+        this.lastObservedNextKey = key;
+
+        this.nextFlight = { number, date, scheduledOffBlock, departureUtc: '', cityPair: '' };
+        if (!number || !date) {
+            this.clearPreflightTimer();
+            await this.clearNextFlight();
+            return;
+        }
+        this.requestPreflightRefresh(0);
     }
 
     async observeFlightNumber(value, force = false) {
@@ -166,6 +219,8 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.summaryData = null;
         this.inFlightWithEta = false;
         this.monitoring = true;
+        await this.setStateAsync('next.visible', false, true);
+        await this.setStateAsync('info.phase', 'flight', true);
         await this.setStateAsync('info.monitoring', true, true);
         await this.setStateAsync('info.status', `Überwachung für ${flightNumber} gestartet`, true);
         this.requestRefresh();
@@ -196,6 +251,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         await this.setStateAsync('info.monitoring', false, true);
         await this.setStateAsync('info.nextRefresh', '', true);
         await this.setStateAsync('info.status', status, true);
+        if (!this.terminalTimer) await this.updatePreflightDisplay();
     }
 
     clearTerminalRetention() {
@@ -215,6 +271,7 @@ class LufthansaFlightStatus extends utils.Adapter {
             return;
         }
         const retentionUntil = new Date(Date.now() + retentionMs);
+        await this.setStateAsync('info.phase', 'postflight', true);
         await this.setStateAsync('info.retentionUntil', retentionUntil.toISOString(), true);
         this.terminalTimer = this.setTimeout(() => this.clearFinishedFlight(), retentionMs);
     }
@@ -243,6 +300,8 @@ class LufthansaFlightStatus extends utils.Adapter {
         await this.setStateAsync('info.activePollIntervalSec', 0, true);
         await this.setStateAsync('info.retentionUntil', '', true);
         await this.setStateAsync('info.status', 'Warte auf Flugnummer im konfigurierten Objekt', true);
+        await this.updatePreflightDisplay();
+        this.requestPreflightRefresh(0);
     }
 
     requestRefresh() {
@@ -252,6 +311,94 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.setStateAsync('info.activePollIntervalSec', intervalMs / 1000, true).catch(() => undefined);
         this.setStateAsync('info.nextRefresh', new Date(dueAt).toISOString(), true).catch(() => undefined);
         this.queueRefresh(Math.max(0, dueAt - Date.now()));
+    }
+
+    preflightPollingIntervalMs() {
+        return Math.min(Math.max(Number(this.config.preflightPollIntervalSec) || 900, 300), 3600) * 1000;
+    }
+
+    preflightDisplayLeadMs() {
+        return Math.min(Math.max(Number(this.config.preflightDisplayMinutes) || 30, 0), 240) * 60_000;
+    }
+
+    clearPreflightTimer() {
+        if (this.preflightTimer) this.clearTimeout(this.preflightTimer);
+        this.preflightTimer = null;
+    }
+
+    requestPreflightRefresh(delayMs) {
+        if (!this.nextFlight.number || !this.nextFlight.date) return;
+        this.clearPreflightTimer();
+        const dueAt = Math.max(Date.now() + delayMs, this.lastPreflightRequestAt + this.preflightPollingIntervalMs());
+        this.preflightTimer = this.setTimeout(() => this.refreshPreflight(), Math.max(0, dueAt - Date.now()));
+    }
+
+    async refreshPreflight() {
+        if (this.monitoring) return;
+        if (!this.nextFlight.number || !this.nextFlight.date) return;
+        try {
+            this.lastPreflightRequestAt = Date.now();
+            const response = await this.getFlightStatus(this.nextFlight.number, this.nextFlight.date);
+            const flight = this.firstFlight(response);
+            if (!flight) throw new Error(`Kein Vorflugstatus für ${this.nextFlight.number} am ${this.nextFlight.date} gefunden`);
+
+            const departure = flight.Departure || {};
+            const arrival = flight.Arrival || {};
+            this.nextFlight.departureUtc = this.time(departure, 'Estimated') || this.time(departure, 'Scheduled') || '';
+            this.nextFlight.cityPair = this.cityPair(departure.AirportCode, arrival.AirportCode);
+            await this.setStateAsync('next.number', this.nextFlight.number, true);
+            await this.setStateAsync('next.cityPair', this.nextFlight.cityPair, true);
+            await this.setStateAsync('next.departure.estimatedUtc', this.nextFlight.departureUtc, true);
+            await this.setStateAsync('info.connection', true, true);
+            await this.updatePreflightDisplay();
+        } catch (error) {
+            this.log.debug(`Lufthansa Preflight: ${error?.message || error}`);
+            await this.updatePreflightDisplay();
+        } finally {
+            this.requestPreflightRefresh(0);
+        }
+    }
+
+    preflightDepartureDate() {
+        const apiTime = this.parseUtc(this.nextFlight.departureUtc);
+        if (apiTime) return apiTime;
+        const date = this.nextFlight.date;
+        const time = this.nextFlight.scheduledOffBlock;
+        if (time.includes('T')) return this.parseUtc(time);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}(:\d{2})?$/.test(time)) return null;
+        const local = new Date(`${date}T${time}`);
+        return Number.isNaN(local.getTime()) ? null : local;
+    }
+
+    async updatePreflightDisplay() {
+        const departure = this.preflightDepartureDate();
+        if (!this.nextFlight.number || !departure) {
+            await this.setStateAsync('next.visible', false, true);
+            if (!this.monitoring && !this.terminalTimer) await this.setStateAsync('info.phase', 'idle', true);
+            return;
+        }
+        const remainingMinutes = Math.max(0, Math.ceil((departure.getTime() - Date.now()) / 60_000));
+        const visible = !this.monitoring && !this.terminalTimer && departure.getTime() > Date.now() && departure.getTime() - Date.now() <= this.preflightDisplayLeadMs();
+        const hours = Math.floor(remainingMinutes / 60);
+        const minutes = remainingMinutes % 60;
+        const prefix = [this.nextFlight.number, this.nextFlight.cityPair].filter(Boolean).join(' ');
+        await this.setStateAsync('next.countdownMinutes', remainingMinutes, true);
+        await this.setStateAsync('next.summary', `${prefix} – ${hours} Std. ${minutes} Min. bis Abflug`, true);
+        await this.setStateAsync('next.visible', visible, true);
+        if (visible) {
+            await this.setStateAsync('info.phase', 'preflight', true);
+        } else if (!this.monitoring && !this.terminalTimer) {
+            await this.setStateAsync('info.phase', 'idle', true);
+        }
+    }
+
+    async clearNextFlight() {
+        for (const id of ['next.number', 'next.cityPair', 'next.departure.estimatedUtc', 'next.summary']) {
+            await this.setStateAsync(id, '', true);
+        }
+        await this.setStateAsync('next.countdownMinutes', 0, true);
+        await this.setStateAsync('next.visible', false, true);
+        if (!this.monitoring && !this.terminalTimer) await this.setStateAsync('info.phase', 'idle', true);
     }
 
     async refresh() {
@@ -446,8 +593,10 @@ class LufthansaFlightStatus extends utils.Adapter {
     }
 
     async updateSummaryFromCache() {
-        if (!this.summaryData || ['LD', 'CD'].includes(this.summaryData.statusCode)) return;
-        await this.setStateAsync('flight.summary', this.summary(this.summaryData.flightNumber, this.summaryData.statusCode, this.summaryData.etaDate), true);
+        if (this.summaryData && !['LD', 'CD'].includes(this.summaryData.statusCode)) {
+            await this.setStateAsync('flight.summary', this.summary(this.summaryData.flightNumber, this.summaryData.statusCode, this.summaryData.etaDate), true);
+        }
+        await this.updatePreflightDisplay();
     }
 }
 
