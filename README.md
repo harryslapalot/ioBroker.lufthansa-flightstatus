@@ -9,6 +9,7 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - **Optionales Objekt mit Abflugdatum:** ein State mit `YYYY-MM-DD`, etwa `0_userdata.0.flight.departureDate`. Die Lufthansa API benötigt das Datum am Abflugort. Ohne diesen State nutzt der Adapter das heutige Datum in Berlin.
 - **Abfrageintervall:** Voreinstellung 300 Sekunden. Die Lufthansa API-Quote beachten.
 - **Intervall in der Luft nach erster ETA:** 600–900 Sekunden. Sobald ein tatsächlicher Abflug und eine geschätzte Ankunft vorliegen, verwendet der Adapter dieses längere Intervall.
+- **Anzeigezeit nach Landung oder Annullierung:** Dauer in Minuten, für die die letzten Flugdaten noch sichtbar bleiben. `0` leert die Daten sofort.
 
 ## Überwachungslogik und API-Quote
 
@@ -18,7 +19,7 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - Wird dieser State während einer laufenden Überwachung leer, verfolgt der Adapter den bereits gemerkten Flug weiter. Erst eine neue Flugnummer oder der Status `LD`/`CD` ersetzt beziehungsweise beendet die Überwachung.
 - Zwischen zwei Flight-Status-Anfragen liegt immer mindestens das konfigurierte Abfrageintervall (mindestens 60 Sekunden).
 - Nach dem ersten In-Flight-ETA verwendet der Adapter das separate, längere In-Flight-Intervall. Die Restflugzeit in `flight.summary` wird trotzdem jede Minute aus der letzten ETA neu berechnet; dafür wird keine Lufthansa-API abgefragt.
-- Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die API-Abfrage automatisch. Die letzten Flugdaten einschließlich `flight.number` und Kurzstatus bleiben danach noch 30 Minuten sichtbar und werden erst anschließend geleert.
+- Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die API-Abfrage automatisch. Die letzten Flugdaten bleiben für die konfigurierte Nachlaufzeit sichtbar und werden danach vollständig geleert; `flight.progress` wird dabei auf `0` gesetzt.
 - `info.monitoring` zeigt die aktive Überwachung; `info.nextRefresh` zeigt den nächsten geplanten Abruf.
 - `info.retentionUntil` zeigt, bis wann die Daten eines beendeten Flugs sichtbar bleiben.
 
