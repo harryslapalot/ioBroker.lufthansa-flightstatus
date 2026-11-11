@@ -32,6 +32,13 @@
       "min": 600,
       "max": 900,
       "default": 600
+    },
+    "terminalRetentionMinutes": {
+      "type": "number",
+      "label": "Anzeigezeit nach Landung oder Annullierung (Minuten)",
+      "min": 0,
+      "max": 1440,
+      "default": 30
     }
   }
 }
