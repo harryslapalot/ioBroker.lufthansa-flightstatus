@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "lufthansa-flightstatus",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "news": {},
     "titleLang": {
       "en": "Lufthansa Flight Status",
@@ -38,6 +38,11 @@
     "pollIntervalSec": 300,
     "inFlightPollIntervalSec": 600,
     "terminalRetentionMinutes": 30,
+    "nextFlightNumberState": "openairlog.0.next.flightNumber",
+    "nextFlightDateState": "openairlog.0.next.date",
+    "nextScheduledOffBlockState": "openairlog.0.next.scheduledOffBlock",
+    "preflightDisplayMinutes": 30,
+    "preflightPollIntervalSec": 900,
     "apiBase": "https://api.lufthansa.com/v1"
   },
   "objects": [],
