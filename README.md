@@ -22,7 +22,8 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - Wird dieser State während einer laufenden Überwachung leer, verfolgt der Adapter den bereits gemerkten Flug weiter. Erst eine neue Flugnummer oder der Status `LD`/`CD` ersetzt beziehungsweise beendet die Überwachung.
 - Zwischen zwei Flight-Status-Anfragen liegt immer mindestens das konfigurierte Abfrageintervall (mindestens 60 Sekunden).
 - Nach dem ersten In-Flight-ETA verwendet der Adapter das separate, längere In-Flight-Intervall. Die Restflugzeit in `flight.summary` wird trotzdem jede Minute aus der letzten ETA neu berechnet; dafür wird keine Lufthansa-API abgefragt.
-- Der nächste Flug wird getrennt über `next.*` geführt. Sobald die Vorflug-Anzeige beginnt, ist `info.phase` gleich `preflight`; beim aktiven Flug `flight`; während der Nachlaufzeit nach Landung oder Annullierung `postflight`; sonst `idle`.
+- Der nächste Flug wird getrennt über `next.*` geführt. Sobald ein gültiger nächster Flug vorliegt, ist `info.phase` gleich `preflight`; `next.visible` steuert unabhängig davon den konfigurierten Zeitpunkt der AWTRIX-Anzeige. Beim aktiven Flug ist die Phase `flight`, während der Nachlaufzeit nach Landung oder Annullierung `postflight`; sonst `idle`.
+- Liegt die Lufthansa-Abflugschätzung bereits in der Vergangenheit, ohne dass der Flug als aktuell übernommen wurde, bleibt der nächste Flug sichtbar und `next.summary` zeigt `wartet auf Abflug`.
 - Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die API-Abfrage automatisch. Die letzten Flugdaten bleiben für die konfigurierte Nachlaufzeit sichtbar und werden danach vollständig geleert; `flight.progress` wird dabei auf `0` gesetzt.
 - `info.monitoring` zeigt die aktive Überwachung; `info.nextRefresh` zeigt den nächsten geplanten Abruf.
 - `info.retentionUntil` zeigt, bis wann die Daten eines beendeten Flugs sichtbar bleiben.
