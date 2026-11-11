@@ -1,7 +1,7 @@
 {
   "common": {
     "name": "lufthansa-flightstatus",
-    "version": "0.3.4",
+    "version": "0.3.5",
     "news": {},
     "titleLang": {
       "en": "Lufthansa Flight Status",
@@ -16,8 +16,8 @@
     "mode": "daemon",
     "compact": true,
     "enabled": true,
-    "icon": "lufthansa-flightstatus.png",
-    "extIcon": "https://raw.githubusercontent.com/ioBroker/ioBroker.admin/master/admin/admin.png",
+    "icon": "lufthansa-flightstatus.svg",
+    "extIcon": "https://raw.githubusercontent.com/harryslapalot/ioBroker.lufthansa-flightstatus/main/admin/lufthansa-flightstatus.svg",
     "readme": "https://developer.lufthansa.com/docs/read/api_details/operations/Flight_Status",
     "loglevel": "info",
     "tier": 3,
