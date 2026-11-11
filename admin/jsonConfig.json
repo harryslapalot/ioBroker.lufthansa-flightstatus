@@ -39,6 +39,35 @@
       "min": 0,
       "max": 1440,
       "default": 30
+    },
+    "nextFlightNumberState": {
+      "type": "text",
+      "label": "ioBroker-Objekt mit nächster Flugnummer",
+      "default": "openairlog.0.next.flightNumber"
+    },
+    "nextFlightDateState": {
+      "type": "text",
+      "label": "ioBroker-Objekt mit nächstem Abflugdatum (YYYY-MM-DD)",
+      "default": "openairlog.0.next.date"
+    },
+    "nextScheduledOffBlockState": {
+      "type": "text",
+      "label": "ioBroker-Objekt mit geplantem Offblock des nächsten Flugs",
+      "default": "openairlog.0.next.scheduledOffBlock"
+    },
+    "preflightDisplayMinutes": {
+      "type": "number",
+      "label": "Anzeigezeit vor Abflug (Minuten)",
+      "min": 0,
+      "max": 240,
+      "default": 30
+    },
+    "preflightPollIntervalSec": {
+      "type": "number",
+      "label": "Vorflug-Abfrageintervall (Sekunden)",
+      "min": 300,
+      "max": 3600,
+      "default": 900
     }
   }
 }
