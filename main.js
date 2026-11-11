@@ -187,7 +187,7 @@ class LufthansaFlightStatus extends utils.Adapter {
             await this.clearNextFlight();
             return;
         }
-        if (!this.monitoring && !this.terminalTimer) await this.setStateAsync('info.phase', 'preflight', true);
+        await this.setPreflightPhase();
         this.requestPreflightRefresh(0);
     }
 
@@ -328,7 +328,7 @@ class LufthansaFlightStatus extends utils.Adapter {
     }
 
     requestPreflightRefresh(delayMs) {
-        if (!this.nextFlight.number || !this.nextFlight.date) return;
+        if (this.monitoring || !this.nextFlight.number || !this.nextFlight.date) return;
         this.clearPreflightTimer();
         const dueAt = Math.max(Date.now() + delayMs, this.lastPreflightRequestAt + this.preflightPollingIntervalMs());
         this.preflightTimer = this.setTimeout(() => this.refreshPreflight(), Math.max(0, dueAt - Date.now()));
@@ -375,11 +375,15 @@ class LufthansaFlightStatus extends utils.Adapter {
         const departure = this.preflightDepartureDate();
         if (!this.nextFlight.number || !departure) {
             await this.setStateAsync('next.visible', false, true);
-            if (!this.monitoring && !this.terminalTimer && this.nextFlight.number) await this.setStateAsync('info.phase', 'preflight', true);
+            await this.setPreflightPhase();
             return;
         }
         const remainingMinutes = Math.max(0, Math.ceil((departure.getTime() - Date.now()) / 60_000));
         const departureTimeReached = departure.getTime() <= Date.now();
+        if (departureTimeReached && !this.monitoring && !this.terminalTimer) {
+            await this.adoptNextFlight();
+            return;
+        }
         const visible = !this.monitoring && !this.terminalTimer && (departureTimeReached || departure.getTime() - Date.now() <= this.preflightDisplayLeadMs());
         const hours = Math.floor(remainingMinutes / 60);
         const minutes = remainingMinutes % 60;
@@ -387,8 +391,30 @@ class LufthansaFlightStatus extends utils.Adapter {
         await this.setStateAsync('next.countdownMinutes', remainingMinutes, true);
         await this.setStateAsync('next.summary', departureTimeReached ? `${prefix} – wartet auf Abflug` : `${prefix} – ${hours} Std. ${minutes} Min. bis Abflug`, true);
         await this.setStateAsync('next.visible', visible, true);
-        if (!this.monitoring && !this.terminalTimer && this.nextFlight.number) {
+        await this.setPreflightPhase();
+    }
+
+    async adoptNextFlight() {
+        if (this.monitoring || !this.nextFlight.number || !this.nextFlight.date) return;
+        this.clearPreflightTimer();
+        this.clearTerminalRetention();
+        this.trackedFlightNumber = this.nextFlight.number;
+        this.trackedDepartureDate = this.nextFlight.date;
+        this.trackedCityPair = this.nextFlight.cityPair;
+        this.summaryData = null;
+        this.inFlightWithEta = false;
+        this.monitoring = true;
+        await this.setStateAsync('next.visible', false, true);
+        await this.setStateAsync('info.phase', 'flight', true);
+        await this.setStateAsync('info.monitoring', true, true);
+        await this.setStateAsync('info.status', `Nächsten Flug ${this.trackedFlightNumber} als aktuellen Flug übernommen`, true);
+        this.requestRefresh();
+    }
+
+    async setPreflightPhase() {
+        if (this.nextFlight.number && !this.monitoring && !this.terminalTimer) {
             await this.setStateAsync('info.phase', 'preflight', true);
+            await this.setStateAsync('flight.progress', 0, true);
         }
     }
 
