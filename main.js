@@ -427,11 +427,9 @@ class LufthansaFlightStatus extends utils.Adapter {
             return;
         }
         const visible = !this.monitoring && !this.terminalTimer && (departureTimeReached || departure.getTime() - Date.now() <= this.preflightDisplayLeadMs());
-        const hours = Math.floor(remainingMinutes / 60);
-        const minutes = remainingMinutes % 60;
         const prefix = [this.nextFlight.number, this.nextFlight.cityPair].filter(Boolean).join(' ');
         await this.setStateAsync('next.countdownMinutes', remainingMinutes, true);
-        await this.setStateAsync('next.summary', departureTimeReached ? `${prefix} – wartet auf Abflug` : `${prefix} – ${hours} Std. ${minutes} Min. bis Abflug`, true);
+        await this.setStateAsync('next.summary', departureTimeReached ? `${prefix} – wartet auf Abflug` : `${prefix} – ${this.formatDuration(remainingMinutes)} bis Abflug`, true);
         await this.setStateAsync('next.visible', visible, true);
         await this.setPreflightPhase();
     }
@@ -647,6 +645,12 @@ class LufthansaFlightStatus extends utils.Adapter {
         return [flightNumber, this.trackedCityPair].filter(Boolean).join(' ');
     }
 
+    formatDuration(totalMinutes) {
+        const minutes = Math.max(0, Math.ceil(Number(totalMinutes) || 0));
+        if (minutes < 60) return `${minutes} Minuten`;
+        return `${Math.floor(minutes / 60)} Std. ${minutes % 60} Minuten`;
+    }
+
     summary(flightNumber, statusCode, etaDate) {
         const prefix = this.summaryPrefix(flightNumber);
         if (statusCode === 'LD') return `${prefix} gelandet`;
@@ -654,10 +658,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         if (!etaDate) return `${prefix} ETA --:--, Restflugzeit unbekannt`;
         const eta = new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit', hour12: false }).format(etaDate);
         const minutes = Math.max(0, Math.ceil((etaDate.getTime() - Date.now()) / 60_000));
-        const remaining = minutes < 60
-            ? `${minutes} Minuten`
-            : `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.`;
-        return `${prefix} ETA ${eta}, ${remaining} Restflugzeit`;
+        return `${prefix} ETA ${eta}, ${this.formatDuration(minutes)} Restflugzeit`;
     }
 
     async updateSummaryFromCache() {
