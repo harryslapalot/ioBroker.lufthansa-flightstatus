@@ -339,6 +339,8 @@ class LufthansaFlightStatus extends utils.Adapter {
     }
 
     preflightPollingIntervalMs() {
+        const scheduledDeparture = this.parseUtc(this.nextFlight.scheduledDepartureUtc) || this.preflightScheduledOffBlockDate();
+        if (scheduledDeparture && Date.now() >= scheduledDeparture.getTime()) return 2 * 60_000;
         return Math.min(Math.max(Number(this.config.preflightPollIntervalSec) || 900, 300), 3600) * 1000;
     }
 
@@ -354,7 +356,10 @@ class LufthansaFlightStatus extends utils.Adapter {
     requestPreflightRefresh(delayMs) {
         if (this.monitoring || !this.nextFlight.number || !this.nextFlight.date) return;
         this.clearPreflightTimer();
-        const dueAt = Math.max(Date.now() + delayMs, this.lastPreflightRequestAt + this.preflightPollingIntervalMs());
+        const intervalMs = this.preflightPollingIntervalMs();
+        const dueAt = Math.max(Date.now() + delayMs, this.lastPreflightRequestAt + intervalMs);
+        this.setStateAsync('info.activePollIntervalSec', intervalMs / 1000, true).catch(() => undefined);
+        this.setStateAsync('info.nextRefresh', new Date(dueAt).toISOString(), true).catch(() => undefined);
         this.preflightTimer = this.setTimeout(() => this.refreshPreflight(), Math.max(0, dueAt - Date.now()));
     }
 
@@ -369,6 +374,8 @@ class LufthansaFlightStatus extends utils.Adapter {
 
             const departure = flight.Departure || {};
             const arrival = flight.Arrival || {};
+            const actualDeparture = this.time(departure, 'Actual');
+            const statusCode = flight.FlightStatus?.Code || '';
             this.nextFlight.departureUtc = this.time(departure, 'Estimated') || this.time(departure, 'Scheduled') || '';
             this.nextFlight.scheduledDepartureUtc = this.time(departure, 'Scheduled') || '';
             this.nextFlight.cityPair = this.cityPair(departure.AirportCode, arrival.AirportCode);
@@ -378,6 +385,7 @@ class LufthansaFlightStatus extends utils.Adapter {
             await this.setStateAsync('next.departure.status', this.nextFlightDepartureStatus(), true);
             await this.setStateAsync('info.connection', true, true);
             await this.updatePreflightDisplay();
+            if (actualDeparture || statusCode === 'DP') await this.adoptNextFlight();
         } catch (error) {
             this.log.debug(`Lufthansa Preflight: ${error?.message || error}`);
             await this.updatePreflightDisplay();
@@ -422,10 +430,6 @@ class LufthansaFlightStatus extends utils.Adapter {
         }
         const remainingMinutes = Math.max(0, Math.ceil((departure.getTime() - Date.now()) / 60_000));
         const departureTimeReached = departure.getTime() <= Date.now();
-        if (departureTimeReached && !this.monitoring && !this.terminalTimer) {
-            await this.adoptNextFlight();
-            return;
-        }
         const visible = !this.monitoring && !this.terminalTimer && (departureTimeReached || departure.getTime() - Date.now() <= this.preflightDisplayLeadMs());
         const prefix = [this.nextFlight.number, this.nextFlight.cityPair].filter(Boolean).join(' ');
         await this.setStateAsync('next.countdownMinutes', remainingMinutes, true);
