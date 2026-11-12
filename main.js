@@ -23,7 +23,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         this.lastObservedFlightDate = null;
         this.preflightTimer = null;
         this.lastPreflightRequestAt = 0;
-        this.nextFlight = { number: '', date: '', scheduledOffBlock: '', departureUtc: '', cityPair: '' };
+        this.nextFlight = { number: '', date: '', scheduledOffBlock: '', departureUtc: '', scheduledDepartureUtc: '', cityPair: '' };
         this.lastObservedNextKey = null;
 
         this.on('ready', () => this.onReady());
@@ -74,6 +74,7 @@ class LufthansaFlightStatus extends utils.Adapter {
             'next.number': ['string', 'text', 'Nächste Flugnummer'],
             'next.cityPair': ['string', 'text', 'Citypair des nächsten Flugs'],
             'next.departure.estimatedUtc': ['string', 'value.time', 'Geschätzter Abflug des nächsten Flugs UTC'],
+            'next.departure.status': ['string', 'text', 'Abflugstatus des nächsten Flugs (on time oder delayed)'],
             'next.countdownMinutes': ['number', 'value', 'Verbleibende Minuten bis Abflug'],
             'next.summary': ['string', 'text', 'Kurzstatus des nächsten Flugs für Anzeige'],
             'next.visible': ['boolean', 'indicator', 'Nächsten Flug auf AWTRIX anzeigen'],
@@ -182,7 +183,7 @@ class LufthansaFlightStatus extends utils.Adapter {
         if (!force && key === this.lastObservedNextKey) return;
         this.lastObservedNextKey = key;
 
-        this.nextFlight = { number, date, scheduledOffBlock, departureUtc: '', cityPair: '' };
+        this.nextFlight = { number, date, scheduledOffBlock, departureUtc: '', scheduledDepartureUtc: '', cityPair: '' };
         if (!number || !date) {
             this.clearPreflightTimer();
             await this.clearNextFlight();
@@ -369,10 +370,12 @@ class LufthansaFlightStatus extends utils.Adapter {
             const departure = flight.Departure || {};
             const arrival = flight.Arrival || {};
             this.nextFlight.departureUtc = this.time(departure, 'Estimated') || this.time(departure, 'Scheduled') || '';
+            this.nextFlight.scheduledDepartureUtc = this.time(departure, 'Scheduled') || '';
             this.nextFlight.cityPair = this.cityPair(departure.AirportCode, arrival.AirportCode);
             await this.setStateAsync('next.number', this.nextFlight.number, true);
             await this.setStateAsync('next.cityPair', this.nextFlight.cityPair, true);
             await this.setStateAsync('next.departure.estimatedUtc', this.nextFlight.departureUtc, true);
+            await this.setStateAsync('next.departure.status', this.nextFlightDepartureStatus(), true);
             await this.setStateAsync('info.connection', true, true);
             await this.updatePreflightDisplay();
         } catch (error) {
@@ -386,6 +389,22 @@ class LufthansaFlightStatus extends utils.Adapter {
     preflightDepartureDate() {
         const apiTime = this.parseUtc(this.nextFlight.departureUtc);
         if (apiTime) return apiTime;
+        const date = this.nextFlight.date;
+        const time = this.nextFlight.scheduledOffBlock;
+        if (time.includes('T')) return this.parseUtc(time);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}(:\d{2})?$/.test(time)) return null;
+        const local = new Date(`${date}T${time}`);
+        return Number.isNaN(local.getTime()) ? null : local;
+    }
+
+    nextFlightDepartureStatus() {
+        const estimated = this.parseUtc(this.nextFlight.departureUtc);
+        const scheduled = this.parseUtc(this.nextFlight.scheduledDepartureUtc) || this.preflightScheduledOffBlockDate();
+        if (!estimated || !scheduled) return '';
+        return estimated.getTime() - scheduled.getTime() > 5 * 60_000 ? 'delayed' : 'on time';
+    }
+
+    preflightScheduledOffBlockDate() {
         const date = this.nextFlight.date;
         const time = this.nextFlight.scheduledOffBlock;
         if (time.includes('T')) return this.parseUtc(time);
@@ -442,7 +461,7 @@ class LufthansaFlightStatus extends utils.Adapter {
     }
 
     async clearNextFlight() {
-        for (const id of ['next.number', 'next.cityPair', 'next.departure.estimatedUtc', 'next.summary']) {
+        for (const id of ['next.number', 'next.cityPair', 'next.departure.estimatedUtc', 'next.departure.status', 'next.summary']) {
             await this.setStateAsync(id, '', true);
         }
         await this.setStateAsync('next.countdownMinutes', 0, true);
