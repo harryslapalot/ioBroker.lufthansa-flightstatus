@@ -421,6 +421,10 @@ class LufthansaFlightStatus extends utils.Adapter {
         return Number.isNaN(local.getTime()) ? null : local;
     }
 
+    preflightPlannedDepartureDate() {
+        return this.parseUtc(this.nextFlight.scheduledDepartureUtc) || this.preflightScheduledOffBlockDate();
+    }
+
     async updatePreflightDisplay() {
         const departure = this.preflightDepartureDate();
         if (!this.nextFlight.number || !departure) {
@@ -456,9 +460,14 @@ class LufthansaFlightStatus extends utils.Adapter {
     }
 
     async setPreflightPhase() {
-        if (this.nextFlight.number && !this.monitoring && !this.terminalTimer) {
+        if (!this.nextFlight.number || this.monitoring || this.terminalTimer) return;
+        const plannedDeparture = this.preflightPlannedDepartureDate();
+        const withinPreflightWindow = plannedDeparture && plannedDeparture.getTime() - Date.now() <= 60 * 60_000;
+        if (withinPreflightWindow) {
             await this.setStateAsync('info.phase', 'preflight', true);
             await this.setStateAsync('flight.progress', 0, true);
+        } else {
+            await this.setStateAsync('info.phase', 'idle', true);
         }
     }
 

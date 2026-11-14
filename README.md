@@ -12,7 +12,7 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - **Anzeigezeit nach Landung oder Annullierung:** Dauer in Minuten, für die die letzten Flugdaten noch sichtbar bleiben. `0` leert die Daten sofort.
 - **Objekte des nächsten Flugs:** Standardmäßig `openairlog.0.next.flightNumber`, `openairlog.0.next.date` und `openairlog.0.next.scheduledOffBlock`.
 - **Anzeigezeit vor Abflug:** Start der Vorflug-Anzeige vor der geschätzten Lufthansa-Abflugzeit; der OpenAirLog-Offblock dient als Fallback.
-- **Vorflug-Abfrageintervall:** Standard 900 Sekunden. Der Countdown wird zwischen den API-Abfragen lokal minütlich fortgeschrieben.
+- **Vorflug-Abfrageintervall:** Standard 900 Sekunden. Der Countdown wird zwischen den API-Abfragen lokal minütlich fortgeschrieben. Ab der planmäßigen Abflugzeit verkürzt der Adapter das Intervall automatisch auf 120 Sekunden, bis der Flug tatsächlich gestartet ist.
 
 ## Überwachungslogik und API-Quote
 
@@ -22,11 +22,11 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - Wird dieser State während einer laufenden Überwachung leer, verfolgt der Adapter den bereits gemerkten Flug weiter. Erst eine neue Flugnummer oder der Status `LD`/`CD` ersetzt beziehungsweise beendet die Überwachung.
 - Zwischen zwei Flight-Status-Anfragen liegt immer mindestens das konfigurierte Abfrageintervall (mindestens 60 Sekunden).
 - Nach dem ersten In-Flight-ETA verwendet der Adapter das separate, längere In-Flight-Intervall. Die Restflugzeit in `flight.summary` wird trotzdem jede Minute aus der letzten ETA neu berechnet; dafür wird keine Lufthansa-API abgefragt.
-- Der nächste Flug wird getrennt über `next.*` geführt. Sobald ein gültiger nächster Flug vorliegt, ist `info.phase` gleich `preflight`; `next.visible` steuert unabhängig davon den konfigurierten Zeitpunkt der AWTRIX-Anzeige. Beim aktiven Flug ist die Phase `flight`, während der Nachlaufzeit nach Landung oder Annullierung `postflight`; sonst `idle`.
+- Der nächste Flug wird getrennt über `next.*` geführt. Bei einem gültigen nächsten Flug bleibt `info.phase` bis eine Stunde vor dem **planmäßigen** Abflug auf `idle`; erst danach lautet die Phase `preflight`. `next.visible` steuert unabhängig davon den konfigurierten Zeitpunkt der AWTRIX-Anzeige. Beim aktiven Flug ist die Phase `flight`, während der Nachlaufzeit nach Landung oder Annullierung `postflight`; sonst `idle`.
 - Beim Übergang zu `preflight` setzt der Adapter `flight.progress` auf `0`.
 - Liegt die Lufthansa-Abflugschätzung bereits in der Vergangenheit, ohne dass der Flug als aktuell übernommen wurde, bleibt der nächste Flug sichtbar und `next.summary` zeigt `wartet auf Abflug`.
-- Sobald der Countdown des nächsten Flugs den Abflugzeitpunkt erreicht, übernimmt der Adapter diesen Flug selbstständig in die Phase `flight`. Das geschieht unabhängig vom OpenAirLog-Polling und startet die normale Flugüberwachung sofort.
-- Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die API-Abfrage automatisch. Die letzten Flugdaten bleiben für die konfigurierte Nachlaufzeit sichtbar und werden danach vollständig geleert; `flight.progress` wird dabei auf `0` gesetzt.
+- Ab der planmäßigen Abflugzeit wird der nächste Flug im `preflight` alle zwei Minuten abgefragt. Der Übergang zu `flight` erfolgt ausschließlich, wenn Lufthansa eine `ActualDepartureTimeUTC` liefert oder den Flugstatus `DP` (Departed) meldet. Dadurch führt eine Verspätung nicht zu einem vorzeitigen Wechsel auf `flight`.
+- Bei Status `LD` (gelandet) oder `CD` (annulliert) endet die API-Abfrage automatisch. Die letzten Flugdaten bleiben für die konfigurierte Nachlaufzeit sichtbar und werden danach vollständig geleert; `flight.progress` wird dabei auf `0` gesetzt. Ein laufender Nachlauf wird bei einem Adapter-Neustart anhand von `info.retentionUntil` wiederhergestellt.
 - `info.monitoring` zeigt die aktive Überwachung; `info.nextRefresh` zeigt den nächsten geplanten Abruf.
 - `info.retentionUntil` zeigt, bis wann die Daten eines beendeten Flugs sichtbar bleiben.
 
@@ -38,9 +38,10 @@ Dieser Adapter fragt den Status eines einzelnen Fluges über die offizielle Luft
 - `flight.arrival.etaBerlin`: aktuell beste Ankunftszeit in der Zeitzone Berlin.
 - `flight.progress`: Fortschritt von tatsächlichem Abflug (falls vorhanden), sonst geschätztem/geplantem Abflug, bis zur ETA.
 - `flight.raw`: vollständige JSON-Antwort für spätere Erweiterungen.
-- `flight.summary`: zum Beispiel `LH780 FRA-SIN ETA 10:14, 2 Std. 0 Min. Restflugzeit`, `LH780 FRA-SIN gelandet` oder `LH780 FRA-SIN cancelled`.
+- `flight.summary`: zum Beispiel `LH780 FRA-SIN ETA 10:14, 2 Std. 0 Minuten Restflugzeit`, `LH780 FRA-SIN ETA 10:14, 45 Minuten Restflugzeit`, `LH780 FRA-SIN gelandet` oder `LH780 FRA-SIN cancelled`.
 - `info.monitoring` / `info.nextRefresh`: Status und Zeitpunkt der aktiven Überwachung.
-- `next.summary` / `next.visible`: Countdown und Anzeigefreigabe für den nächsten Flug.
+- `next.summary` / `next.visible`: Countdown und Anzeigefreigabe für den nächsten Flug. Zeitangaben unter einer Stunde enthalten nur Minuten.
+- `next.departure.status`: `delayed`, wenn die Lufthansa-Abflugschätzung mehr als fünf Minuten nach der planmäßigen Abflugzeit liegt, sonst `on time`.
 - `info.phase`: `idle`, `preflight`, `flight` oder `postflight` zur eindeutigen Anzeige-Steuerung.
 
 ## Installation aus GitHub
